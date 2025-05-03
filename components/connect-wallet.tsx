@@ -1,18 +1,23 @@
-"use client"
-
-import { Button } from "@/components/ui/button"
-import { useWeb3 } from "@/lib/hooks/use-web3"
-import { Loader2 } from "lucide-react"
+"use client";
+import { Button } from "@/components/ui/button";
+import { useWeb3 } from "@/lib/hooks/use-web3";
+import { Loader2 } from "lucide-react";
 
 export default function ConnectWallet() {
-  const { connect, disconnect, isConnected, address, isConnecting } = useWeb3()
+  const { connect, disconnect, isConnected, address, isConnecting } = useWeb3();
 
   if (isConnected && address) {
+    // Ensure address is a string before slicing
+    const displayAddress =
+      typeof address === "string"
+        ? `${address.slice(0, 6)}...${address.slice(-4)}`
+        : "Connected";
+
     return (
       <Button variant="outline" onClick={disconnect}>
-        {address.slice(0, 6)}...{address.slice(-4)}
+        {displayAddress}
       </Button>
-    )
+    );
   }
 
   return (
@@ -26,5 +31,5 @@ export default function ConnectWallet() {
         "Connect Wallet"
       )}
     </Button>
-  )
+  );
 }
