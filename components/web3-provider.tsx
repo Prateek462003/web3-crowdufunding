@@ -16,6 +16,7 @@ interface Web3ContextType {
   disconnect: () => void;
   chainId: number | null;
   networkName: string | null;
+  switchNetwork: (chainId: number) => Promise<void>;
 }
 
 export const Web3Context = createContext<Web3ContextType>({
@@ -29,6 +30,7 @@ export const Web3Context = createContext<Web3ContextType>({
   disconnect: () => {},
   chainId: null,
   networkName: null,
+  switchNetwork: async () => {},
 });
 
 export function Web3Provider({ children }: { children: React.ReactNode }) {
@@ -41,8 +43,11 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
   const [chainId, setChainId] = useState<number | null>(null);
   const [networkName, setNetworkName] = useState<string | null>(null);
 
-  // Contract address from your deployment
+  // Contract address from your deployment - likely on the Hardhat local network
   const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+  // Target chain ID (Hardhat: 31337)
+  const targetChainId = 31337;
 
   // Initialize provider
   useEffect(() => {
@@ -60,15 +65,25 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
 
         // Get network information
         ethereumProvider.getNetwork().then((network) => {
-          setChainId(Number(network.chainId));
+          const currentChainId = Number(network.chainId);
+          setChainId(currentChainId);
           setNetworkName(network.name);
+
+          console.log(
+            `Connected to network: ${network.name} (${currentChainId})`
+          );
         });
 
         // Listen for account changes
         window.ethereum.on("accountsChanged", handleAccountsChanged);
 
         // Listen for chain changes
-        window.ethereum.on("chainChanged", (_chainId: string) => {
+        window.ethereum.on("chainChanged", (newChainId: string) => {
+          const parsedChainId = parseInt(newChainId, 16);
+          console.log(`Chain changed to: ${parsedChainId}`);
+          setChainId(parsedChainId);
+
+          // Refresh the page to ensure everything is in sync
           window.location.reload();
         });
       } catch (error) {
@@ -107,15 +122,33 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
 
           console.log("Connected account:", connectedAddress);
 
-          // Initialize contract with the signer
-          const crowdFundingContract = new ethers.Contract(
-            contractAddress,
-            CrowdFunding.abi,
-            newSigner
+          // Get current network
+          const network = await provider.getNetwork();
+          const currentChainId = Number(network.chainId);
+          setChainId(currentChainId);
+          setNetworkName(network.name);
+
+          console.log(
+            `Connected to network: ${network.name} (${currentChainId})`
           );
 
-          setContract(crowdFundingContract);
-          console.log("Contract initialized");
+          // Only initialize contract if on the correct network
+          if (currentChainId === targetChainId) {
+            // Initialize contract with the signer
+            const crowdFundingContract = new ethers.Contract(
+              contractAddress,
+              CrowdFunding.abi,
+              newSigner
+            );
+
+            setContract(crowdFundingContract);
+            console.log("Contract initialized on correct network");
+          } else {
+            console.warn(
+              "Connected to wrong network. Contract not initialized."
+            );
+            setContract(null);
+          }
         }
       } catch (error) {
         console.error("Error setting up web3:", error);
@@ -149,6 +182,53 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const switchNetwork = async (chainId: number) => {
+    if (!window.ethereum) {
+      console.error("Ethereum provider not available");
+      return;
+    }
+
+    const chainIdHex = `0x${chainId.toString(16)}`;
+
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainIdHex }],
+      });
+
+      // Network info will be updated via chainChanged event
+    } catch (error: any) {
+      // This error code indicates that the chain has not been added to MetaMask
+      if (error.code === 4902) {
+        try {
+          // For Hardhat local network
+          if (chainId === 31337) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [
+                {
+                  chainId: chainIdHex,
+                  chainName: "Hardhat Network",
+                  nativeCurrency: {
+                    name: "Ethereum",
+                    symbol: "ETH",
+                    decimals: 18,
+                  },
+                  rpcUrls: ["http://127.0.0.1:8545/"],
+                },
+              ],
+            });
+          }
+          // Add other networks as needed
+        } catch (addError) {
+          console.error("Error adding network:", addError);
+        }
+      } else {
+        console.error("Error switching network:", error);
+      }
+    }
+  };
+
   const disconnect = () => {
     setAddress(null);
     setSigner(null);
@@ -169,6 +249,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
         disconnect,
         chainId,
         networkName,
+        switchNetwork,
       }}
     >
       {children}

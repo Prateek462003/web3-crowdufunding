@@ -1,7 +1,8 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,10 +25,9 @@ import {
 } from "@/components/ui/select";
 import { useWeb3 } from "@/lib/hooks/use-web3";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { ethers } from "ethers";
-import { toast } from "@/components/ui/use-toast"; // If you have toast component
+import NetworkSwitcher from "@/components/NetworkSwitcher";
 
 const formSchema = z.object({
   title: z.string().min(5, {
@@ -57,10 +57,16 @@ const formSchema = z.object({
 });
 
 export default function CreateCampaignPage() {
-  const { isConnected, contract, address } = useWeb3();
+  const { isConnected, contract, address, chainId } = useWeb3();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  // Target chain ID for our dApp (Hardhat network)
+  const targetChainId = 31337;
+
+  // Check if on correct network
+  const isCorrectNetwork = chainId === targetChainId;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -78,13 +84,25 @@ export default function CreateCampaignPage() {
     // Clear previous errors
     setError("");
 
-    if (!isConnected || !contract) {
+    if (!isConnected) {
       setError("Please connect your wallet first");
       return;
     }
 
+    if (!isCorrectNetwork) {
+      setError("Please switch to the Hardhat Network to create a campaign");
+      return;
+    }
+
+    if (!contract) {
+      setError(
+        "Contract not initialized. Please check your network connection."
+      );
+      return;
+    }
+
     console.log("Connected address:", address);
-    console.log("Contract:", contract);
+    console.log("Current network chainId:", chainId);
 
     setIsSubmitting(true);
 
@@ -139,6 +157,8 @@ export default function CreateCampaignPage() {
         const receipt = await tx.wait();
         console.log("Transaction confirmed:", receipt);
 
+        // Show success message
+        alert("Campaign created successfully!");
         router.push("/campaigns");
       } catch (err: any) {
         console.error("Contract call failed:", err);
@@ -191,9 +211,21 @@ export default function CreateCampaignPage() {
           Fill out the form below to start your crowdfunding campaign
         </p>
 
+        {/* Network switcher component */}
+        <NetworkSwitcher />
+
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
             {error}
+          </div>
+        )}
+
+        {/* Show warning if on wrong network */}
+        {!isCorrectNetwork && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded mb-6">
+            Please switch to the Hardhat Network (localhost) to create a
+            campaign. Your contract is deployed on Hardhat Network, not on the
+            current network.
           </div>
         )}
 
@@ -326,7 +358,11 @@ export default function CreateCampaignPage() {
               )}
             />
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isSubmitting || !isCorrectNetwork}
+            >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
